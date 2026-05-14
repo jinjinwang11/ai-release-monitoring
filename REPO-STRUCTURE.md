@@ -46,7 +46,7 @@ cp examples/standalone-workflow.yaml YOUR_SERVICE/.github/workflows/deployment-r
 
 ```bash
 # 1. Push this repo to GitHub
-git remote add origin https://github.com/YOUR_ORG/ai-release-monitoring.git
+git remote add origin https://github.com/jinjinwang11/ai-release-monitoring.git
 git push -u origin main
 
 # 2. In your service repo, create caller workflow

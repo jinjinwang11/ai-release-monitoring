@@ -1303,7 +1303,7 @@ on:
 jobs:
   call-ai-report:
     # 调用reusable workflow (和Cursor pattern一样)
-    uses: YOUR_ORG/bei-monitoring/.github/workflows/deployment-report-poc.yaml@main
+    uses: jinjinwang11/ai-release-monitoring/.github/workflows/deployment-report-poc.yaml@main
     with:
       service_name: fprmfdt
       deployment_time: ${{ inputs.deployment_time }}

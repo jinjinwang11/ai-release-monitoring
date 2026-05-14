@@ -18,8 +18,7 @@ on:
 jobs:
   call-ai-report:
     # Call the reusable workflow (same pattern as Cursor agent)
-    # Replace YOUR_ORG with your GitHub org name
-    uses: YOUR_ORG/ai-release-monitoring/.github/workflows/deployment-report.yaml@main
+    uses: jinjinwang11/ai-release-monitoring/.github/workflows/deployment-report.yaml@main
     with:
       service_name: YOUR_SERVICE_NAME  # Replace with your service name
       deployment_time: ${{ inputs.deployment_time }}

@@ -28,7 +28,7 @@ cd ~/Develop/ai-release-monitoring
 # Create repo on GitHub first (via web UI or gh CLI)
 # Then:
 
-git remote add origin https://github.com/YOUR_ORG/ai-release-monitoring.git
+git remote add origin https://github.com/jinjinwang11/ai-release-monitoring.git
 git branch -M main
 git push -u origin main
 ```

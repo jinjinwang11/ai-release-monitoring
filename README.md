@@ -72,7 +72,7 @@ Automate post-deployment monitoring with AI-generated health reports:
 # In fpr-fprmfdt/.github/workflows/call-ai-report.yaml
 jobs:
   ai-report:
-    uses: YOUR_ORG/ai-release-monitoring/.github/workflows/deployment-report.yaml@main
+    uses: jinjinwang11/ai-release-monitoring/.github/workflows/deployment-report.yaml@main
     with:
       service_name: fprmfdt
       deployment_time: ${{ inputs.deployment_time }}
@@ -131,7 +131,7 @@ GitHub repo → Settings → Secrets and variables → Actions:
 **Step 1: Push this repo to GitHub**
 
 ```bash
-git remote add origin https://github.com/YOUR_ORG/ai-release-monitoring.git
+git remote add origin https://github.com/jinjinwang11/ai-release-monitoring.git
 git push -u origin main
 ```
 
