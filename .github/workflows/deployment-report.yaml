@@ -1,0 +1,363 @@
+name: AI Deployment Report (Reusable)
+
+# This is a REUSABLE workflow - call it from your service repo
+# Pattern: Same as Cursor agent integration and ci_build.yaml
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: 'Service name (e.g., fprmfdt)'
+        required: true
+        type: string
+      deployment_time:
+        description: 'Deployment time (ISO 8601, e.g., 2026-05-14T10:30:00Z)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Deployed commit SHA'
+        required: true
+        type: string
+      environment:
+        description: 'Environment (production/staging)'
+        required: false
+        type: string
+        default: 'production'
+      wait_minutes:
+        description: 'Minutes to wait for metrics stabilization'
+        required: false
+        type: number
+        default: 15
+    secrets:
+      DATADOG_API_KEY:
+        description: 'Datadog API key'
+        required: true
+      DATADOG_APP_KEY:
+        description: 'Datadog application key'
+        required: true
+      LARK_WEBHOOK:
+        description: 'Lark webhook URL'
+        required: true
+
+permissions:
+  contents: read
+  models: read  # Required for GitHub Models API
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 20  # Get recent commits for analysis
+      
+      - name: Wait for Metrics Stabilization
+        run: |
+          echo "⏰ Waiting ${{ inputs.wait_minutes }} minutes for metrics to stabilize..."
+          echo "Deployment time: ${{ inputs.deployment_time }}"
+          echo "Service: ${{ inputs.service_name }}"
+          sleep $((${{ inputs.wait_minutes }} * 60))
+      
+      - name: Mark Deployment in Datadog
+        run: |
+          DEPLOYMENT_TIMESTAMP=$(date -u -d "${{ inputs.deployment_time }}" +%s 2>/dev/null || date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "${{ inputs.deployment_time }}" +%s)
+          
+          curl -X POST "https://api.datadoghq.com/api/v1/events" \
+            -H "DD-API-KEY: ${{ secrets.DATADOG_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "Deployment: ${{ inputs.service_name }}",
+              "text": "AI monitoring for deployment ${{ inputs.commit_sha }}",
+              "tags": ["deployment", "service:${{ inputs.service_name }}", "env:${{ inputs.environment }}", "ai-monitoring"],
+              "date_happened": '"${DEPLOYMENT_TIMESTAMP}"'
+            }'
+          
+          echo "✅ Deployment marker created in Datadog"
+      
+      - name: Query Datadog Metrics
+        id: metrics
+        env:
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
+          DEPLOYMENT_TIME: ${{ inputs.deployment_time }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "📊 Querying Datadog metrics..."
+          
+          # Calculate time windows (handle both Linux and macOS date)
+          DEPLOYMENT_TIMESTAMP=$(date -u -d "$DEPLOYMENT_TIME" +%s 2>/dev/null || date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$DEPLOYMENT_TIME" +%s)
+          BEFORE_START=$((DEPLOYMENT_TIMESTAMP - 3600))  # 1 hour before
+          BEFORE_END=$DEPLOYMENT_TIMESTAMP
+          AFTER_START=$DEPLOYMENT_TIMESTAMP
+          AFTER_END=$(date -u +%s)
+          
+          echo "Time windows:"
+          echo "  Before: $BEFORE_START to $BEFORE_END"
+          echo "  After: $AFTER_START to $AFTER_END"
+          
+          # Query error rate - BEFORE
+          echo "Querying error rate (before)..."
+          BEFORE_ERRORS=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.errors{service:$SERVICE_NAME,env:$ENVIRONMENT}" \
+            -d "from=$BEFORE_START" \
+            -d "to=$BEFORE_END")
+          
+          # Query error rate - AFTER
+          echo "Querying error rate (after)..."
+          AFTER_ERRORS=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.errors{service:$SERVICE_NAME,env:$ENVIRONMENT}" \
+            -d "from=$AFTER_START" \
+            -d "to=$AFTER_END")
+          
+          # Query latency - BEFORE
+          echo "Querying latency (before)..."
+          BEFORE_LATENCY=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.duration{service:$SERVICE_NAME,env:$ENVIRONMENT}" \
+            -d "from=$BEFORE_START" \
+            -d "to=$BEFORE_END")
+          
+          # Query latency - AFTER
+          echo "Querying latency (after)..."
+          AFTER_LATENCY=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.duration{service:$SERVICE_NAME,env:$ENVIRONMENT}" \
+            -d "from=$AFTER_START" \
+            -d "to=$AFTER_END")
+          
+          # Query memory - BEFORE
+          echo "Querying memory (before)..."
+          BEFORE_MEMORY=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:system.mem.used{service:$SERVICE_NAME,env:$ENVIRONMENT}" \
+            -d "from=$BEFORE_START" \
+            -d "to=$BEFORE_END")
+          
+          # Query memory - AFTER
+          echo "Querying memory (after)..."
+          AFTER_MEMORY=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:system.mem.used{service:$SERVICE_NAME,env:$ENVIRONMENT}" \
+            -d "from=$AFTER_START" \
+            -d "to=$AFTER_END")
+          
+          # Save metrics to files
+          echo "$BEFORE_ERRORS" > before_errors.json
+          echo "$AFTER_ERRORS" > after_errors.json
+          echo "$BEFORE_LATENCY" > before_latency.json
+          echo "$AFTER_LATENCY" > after_latency.json
+          echo "$BEFORE_MEMORY" > before_memory.json
+          echo "$AFTER_MEMORY" > after_memory.json
+          
+          echo "✅ All metrics queried successfully"
+      
+      - name: Generate AI Report with GitHub Models
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          DEPLOYMENT_TIME: ${{ inputs.deployment_time }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "🤖 Generating AI report..."
+          
+          # Get commit messages and diffs
+          COMMITS=$(git log --oneline --no-decorate -10)
+          COMMIT_DETAILS=$(git log -1 --pretty=format:"%h - %s%n%b" $COMMIT_SHA)
+          
+          # Read all metrics
+          BEFORE_ERRORS=$(cat before_errors.json)
+          AFTER_ERRORS=$(cat after_errors.json)
+          BEFORE_LATENCY=$(cat before_latency.json)
+          AFTER_LATENCY=$(cat after_latency.json)
+          BEFORE_MEMORY=$(cat before_memory.json)
+          AFTER_MEMORY=$(cat after_memory.json)
+          
+          # Create comprehensive AI prompt
+          read -r -d '' AI_PROMPT << 'EOF'
+You are an expert SRE analyzing a production deployment.
+
+**Service:** $SERVICE_NAME
+**Environment:** $ENVIRONMENT
+**Commit:** $COMMIT_SHA
+**Deployment Time:** $DEPLOYMENT_TIME
+
+**Recent Commits:**
+$COMMITS
+
+**Deployed Commit Details:**
+$COMMIT_DETAILS
+
+**Datadog Metrics (JSON format):**
+
+Error Rate Before (1h avg):
+$BEFORE_ERRORS
+
+Error Rate After (15min avg):
+$AFTER_ERRORS
+
+Latency Before (1h avg):
+$BEFORE_LATENCY
+
+Latency After (15min avg):
+$AFTER_LATENCY
+
+Memory Before (1h avg):
+$BEFORE_MEMORY
+
+Memory After (15min avg):
+$AFTER_MEMORY
+
+**Task:**
+1. Parse the JSON responses from Datadog
+2. Extract actual metric values (handle empty responses gracefully)
+3. Compare before/after metrics
+4. Identify any concerning patterns
+5. Generate a deployment health report
+
+**Output Format (Markdown):**
+
+## 🚀 Deployment Report: $SERVICE_NAME
+
+**Status:** [✅ Healthy / ⚠️ Warning / ❌ Critical]
+**Environment:** $ENVIRONMENT
+**Deployment Time:** $DEPLOYMENT_TIME
+**Commit:** $COMMIT_SHA
+
+### 📊 Metrics
+
+| Metric | Before | After | Change | Status |
+|--------|--------|-------|--------|--------|
+| Error Rate | X | Y | Z% | [✅/⚠️/❌] |
+| Latency (avg) | X | Y | Z% | [✅/⚠️/❌] |
+| Memory Usage | X | Y | Z% | [✅/⚠️/❌] |
+
+### 🔍 Analysis
+
+[Analyze the metrics and commits. Be specific about what changed and why.]
+
+### 📝 Recent Changes
+
+[Summarize the commits - what was changed in this deployment]
+
+### 💡 Recommendation
+
+[What action is needed, if any]
+
+**Notes:**
+- Be concise but thorough
+- If metrics are missing/empty, note "Data unavailable"
+- Consider commit content when analyzing metrics
+- Flag any concerning trends even if within thresholds
+EOF
+          
+          # Substitute environment variables
+          AI_PROMPT=$(echo "$AI_PROMPT" | \
+            sed "s|\$SERVICE_NAME|$SERVICE_NAME|g" | \
+            sed "s|\$ENVIRONMENT|$ENVIRONMENT|g" | \
+            sed "s|\$COMMIT_SHA|$COMMIT_SHA|g" | \
+            sed "s|\$DEPLOYMENT_TIME|$DEPLOYMENT_TIME|g" | \
+            sed "s|\$COMMITS|$COMMITS|g" | \
+            sed "s|\$COMMIT_DETAILS|$COMMIT_DETAILS|g" | \
+            sed "s|\$BEFORE_ERRORS|$BEFORE_ERRORS|g" | \
+            sed "s|\$AFTER_ERRORS|$AFTER_ERRORS|g" | \
+            sed "s|\$BEFORE_LATENCY|$BEFORE_LATENCY|g" | \
+            sed "s|\$AFTER_LATENCY|$AFTER_LATENCY|g" | \
+            sed "s|\$BEFORE_MEMORY|$BEFORE_MEMORY|g" | \
+            sed "s|\$AFTER_MEMORY|$AFTER_MEMORY|g")
+          
+          # Call GitHub Models API (GPT-4o - Free!)
+          echo "Calling GitHub Models API..."
+          AI_RESPONSE=$(curl -s -X POST "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"model\": \"gpt-4o\",
+              \"messages\": [
+                {\"role\": \"system\", \"content\": \"You are an expert SRE. Analyze deployment metrics and provide actionable insights. Be concise but thorough.\"},
+                {\"role\": \"user\", \"content\": $(echo "$AI_PROMPT" | jq -Rs .)}
+              ],
+              \"max_tokens\": 1500,
+              \"temperature\": 0.3
+            }")
+          
+          # Extract report from response
+          AI_REPORT=$(echo "$AI_RESPONSE" | jq -r '.choices[0].message.content // "Error: AI analysis failed. Check GitHub Models API rate limits or authentication."')
+          
+          # Save report
+          echo "$AI_REPORT" > report.md
+          
+          echo "✅ AI report generated"
+          echo ""
+          echo "--- Report Preview ---"
+          cat report.md
+      
+      - name: Post to Lark
+        env:
+          LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "📤 Posting report to Lark..."
+          
+          # Read report and escape for JSON
+          REPORT=$(cat report.md | jq -Rs .)
+          
+          # Determine card color based on status in report
+          if grep -q "❌ Critical" report.md; then
+            TEMPLATE="red"
+            TITLE="🚨 Critical: $SERVICE_NAME Deployment"
+          elif grep -q "⚠️ Warning" report.md; then
+            TEMPLATE="orange"
+            TITLE="⚠️ Warning: $SERVICE_NAME Deployment"
+          else
+            TEMPLATE="blue"
+            TITLE="✅ Healthy: $SERVICE_NAME Deployment"
+          fi
+          
+          # Post to Lark with rich card
+          curl -X POST "$LARK_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "msg_type": "interactive",
+              "card": {
+                "header": {
+                  "title": {"content": "'"$TITLE"'", "tag": "plain_text"},
+                  "template": "'"$TEMPLATE"'"
+                },
+                "elements": [
+                  {"tag": "markdown", "content": '"$REPORT"'},
+                  {"tag": "hr"},
+                  {
+                    "tag": "note",
+                    "elements": [
+                      {"tag": "plain_text", "content": "🤖 Generated by AI Release Monitoring (PoC) | Environment: '"$ENVIRONMENT"'"}
+                    ]
+                  }
+                ]
+              }
+            }'
+          
+          echo ""
+          echo "✅ Report posted to Lark successfully!"
+      
+      - name: Upload Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-report-${{ inputs.service_name }}-${{ inputs.commit_sha }}
+          path: |
+            report.md
+            *.json
+          retention-days: 30

@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test artifacts
+test-reports/
+coverage/
+
+# Node modules (if adding any tooling)
+node_modules/

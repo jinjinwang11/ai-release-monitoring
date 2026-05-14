@@ -1,0 +1,231 @@
+name: AI Deployment Report (Standalone PoC)
+
+# This is a STANDALONE workflow for testing
+# Copy this file to your service repo: .github/workflows/deployment-report-poc.yaml
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_time:
+        description: 'Deployment time (ISO 8601, e.g., 2026-05-14T10:30:00Z)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Deployed commit SHA'
+        required: true
+        type: string
+      wait_minutes:
+        description: 'Minutes to wait for metrics (default: 15)'
+        required: false
+        type: number
+        default: 15
+
+permissions:
+  contents: read
+  models: read  # Required for GitHub Models API
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 20
+      
+      - name: Wait for Metrics Stabilization
+        run: |
+          echo "⏰ Waiting ${{ inputs.wait_minutes }} minutes for metrics to stabilize..."
+          echo "Deployment time: ${{ inputs.deployment_time }}"
+          sleep $((${{ inputs.wait_minutes }} * 60))
+      
+      - name: Mark Deployment in Datadog
+        run: |
+          DEPLOYMENT_TIMESTAMP=$(date -u -d "${{ inputs.deployment_time }}" +%s 2>/dev/null || date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "${{ inputs.deployment_time }}" +%s)
+          
+          curl -X POST "https://api.datadoghq.com/api/v1/events" \
+            -H "DD-API-KEY: ${{ secrets.DATADOG_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "Deployment: YOUR_SERVICE_NAME PoC",
+              "text": "PoC test deployment for commit ${{ inputs.commit_sha }}",
+              "tags": ["deployment", "service:YOUR_SERVICE_NAME", "env:production", "poc"],
+              "date_happened": '"${DEPLOYMENT_TIMESTAMP}"'
+            }'
+          
+          echo "✅ Deployment marker created in Datadog"
+      
+      - name: Query Datadog Metrics
+        id: metrics
+        env:
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
+          DEPLOYMENT_TIME: ${{ inputs.deployment_time }}
+        run: |
+          echo "📊 Querying Datadog metrics..."
+          
+          # Calculate time windows
+          DEPLOYMENT_TIMESTAMP=$(date -u -d "$DEPLOYMENT_TIME" +%s 2>/dev/null || date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$DEPLOYMENT_TIME" +%s)
+          BEFORE_START=$((DEPLOYMENT_TIMESTAMP - 3600))
+          BEFORE_END=$DEPLOYMENT_TIMESTAMP
+          AFTER_START=$DEPLOYMENT_TIMESTAMP
+          AFTER_END=$(date -u +%s)
+          
+          echo "Time windows:"
+          echo "  Before: $(date -u -d @$BEFORE_START 2>/dev/null || date -u -r $BEFORE_START) to $(date -u -d @$BEFORE_END 2>/dev/null || date -u -r $BEFORE_END)"
+          echo "  After: $(date -u -d @$AFTER_START 2>/dev/null || date -u -r $AFTER_START) to $(date -u -d @$AFTER_END 2>/dev/null || date -u -r $AFTER_END)"
+          
+          # TODO: Replace YOUR_SERVICE_NAME with your actual service name
+          SERVICE_NAME="YOUR_SERVICE_NAME"
+          
+          # Query metrics
+          BEFORE_ERRORS=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.errors{service:$SERVICE_NAME,env:production}" \
+            -d "from=$BEFORE_START" -d "to=$BEFORE_END")
+          
+          AFTER_ERRORS=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.errors{service:$SERVICE_NAME,env:production}" \
+            -d "from=$AFTER_START" -d "to=$AFTER_END")
+          
+          BEFORE_LATENCY=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.duration{service:$SERVICE_NAME,env:production}" \
+            -d "from=$BEFORE_START" -d "to=$BEFORE_END")
+          
+          AFTER_LATENCY=$(curl -s -G "https://api.datadoghq.com/api/v1/query" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" \
+            --data-urlencode "query=avg:trace.servlet.request.duration{service:$SERVICE_NAME,env:production}" \
+            -d "from=$AFTER_START" -d "to=$AFTER_END")
+          
+          # Save metrics
+          echo "$BEFORE_ERRORS" > before_errors.json
+          echo "$AFTER_ERRORS" > after_errors.json
+          echo "$BEFORE_LATENCY" > before_latency.json
+          echo "$AFTER_LATENCY" > after_latency.json
+          
+          echo "✅ Metrics queried successfully"
+      
+      - name: Generate AI Report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_TIME: ${{ inputs.deployment_time }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          echo "🤖 Generating AI report..."
+          
+          # Get commits
+          COMMITS=$(git log --oneline --no-decorate -10)
+          
+          # Read metrics
+          BEFORE_ERRORS=$(cat before_errors.json)
+          AFTER_ERRORS=$(cat after_errors.json)
+          BEFORE_LATENCY=$(cat before_latency.json)
+          AFTER_LATENCY=$(cat after_latency.json)
+          
+          # TODO: Replace YOUR_SERVICE_NAME
+          SERVICE_NAME="YOUR_SERVICE_NAME"
+          
+          # Create AI prompt
+          read -r -d '' AI_PROMPT << 'EOF'
+You are an expert SRE analyzing a production deployment.
+
+Service: $SERVICE_NAME
+Commit: $COMMIT_SHA
+Deployment Time: $DEPLOYMENT_TIME
+
+Recent commits:
+$COMMITS
+
+Datadog Metrics:
+Before (1h avg): Errors=$BEFORE_ERRORS, Latency=$BEFORE_LATENCY
+After (15min avg): Errors=$AFTER_ERRORS, Latency=$AFTER_LATENCY
+
+Parse the JSON, compare metrics, and generate a deployment health report.
+
+Format:
+## 🚀 Deployment Report: $SERVICE_NAME
+
+**Status:** [✅ Healthy / ⚠️ Warning / ❌ Critical]
+**Deployment Time:** $DEPLOYMENT_TIME
+**Commit:** $COMMIT_SHA
+
+### 📊 Metrics
+| Metric | Before | After | Change | Status |
+|--------|--------|-------|--------|--------|
+
+### 🔍 Analysis
+[Brief analysis]
+
+### 💡 Recommendation
+[Action needed]
+EOF
+          
+          # Substitute variables
+          AI_PROMPT=$(echo "$AI_PROMPT" | \
+            sed "s|\$SERVICE_NAME|$SERVICE_NAME|g" | \
+            sed "s|\$COMMIT_SHA|$COMMIT_SHA|g" | \
+            sed "s|\$DEPLOYMENT_TIME|$DEPLOYMENT_TIME|g" | \
+            sed "s|\$COMMITS|$COMMITS|g" | \
+            sed "s|\$BEFORE_ERRORS|$BEFORE_ERRORS|g" | \
+            sed "s|\$AFTER_ERRORS|$AFTER_ERRORS|g" | \
+            sed "s|\$BEFORE_LATENCY|$BEFORE_LATENCY|g" | \
+            sed "s|\$AFTER_LATENCY|$AFTER_LATENCY|g")
+          
+          # Call GitHub Models API
+          echo "Calling GitHub Models API..."
+          AI_RESPONSE=$(curl -s -X POST "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d "{
+              \"model\": \"gpt-4o\",
+              \"messages\": [
+                {\"role\": \"system\", \"content\": \"You are an SRE expert. Be concise.\"},
+                {\"role\": \"user\", \"content\": $(echo "$AI_PROMPT" | jq -Rs .)}
+              ],
+              \"max_tokens\": 1500
+            }")
+          
+          AI_REPORT=$(echo "$AI_RESPONSE" | jq -r '.choices[0].message.content // "Error: AI call failed"')
+          
+          echo "$AI_REPORT" > report.md
+          cat report.md
+      
+      - name: Post to Lark
+        env:
+          LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK }}
+        run: |
+          REPORT=$(cat report.md | jq -Rs .)
+          
+          curl -X POST "$LARK_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "msg_type": "interactive",
+              "card": {
+                "header": {
+                  "title": {"content": "📊 PoC Deployment Report", "tag": "plain_text"},
+                  "template": "blue"
+                },
+                "elements": [
+                  {"tag": "markdown", "content": '"$REPORT"'}
+                ]
+              }
+            }'
+          
+          echo "✅ Report posted to Lark"
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-report-${{ inputs.commit_sha }}
+          path: |
+            report.md
+            *.json
+          retention-days: 30

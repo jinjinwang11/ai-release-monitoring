@@ -1,0 +1,32 @@
+name: Call AI Report (Example Caller)
+
+# This is an EXAMPLE of how to call the reusable workflow
+# Copy this to your service repo and customize
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_time:
+        description: 'Deployment time (ISO 8601)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Deployed commit SHA'
+        required: true
+        type: string
+
+jobs:
+  call-ai-report:
+    # Call the reusable workflow (same pattern as Cursor agent)
+    # Replace YOUR_ORG with your GitHub org name
+    uses: YOUR_ORG/ai-release-monitoring/.github/workflows/deployment-report.yaml@main
+    with:
+      service_name: YOUR_SERVICE_NAME  # Replace with your service name
+      deployment_time: ${{ inputs.deployment_time }}
+      commit_sha: ${{ inputs.commit_sha }}
+      environment: production
+      wait_minutes: 15
+    secrets:
+      DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+      DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
+      LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK }}
