@@ -1,0 +1,37 @@
+name: Test AI Deployment Report (Self-Test)
+
+# This workflow tests the reusable workflow within this repo
+# Secrets should be configured in THIS repo (ai-release-monitoring)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_time:
+        description: 'Deployment time (ISO 8601, e.g., 2026-05-14T10:30:00Z)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA to test with'
+        required: true
+        type: string
+      service_name:
+        description: 'Service name to test (e.g., fprmfdt)'
+        required: false
+        type: string
+        default: 'fprmfdt'
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  test-report:
+    name: Test deployment report workflow
+    uses: ./.github/workflows/deployment-report.yaml  # Call our own reusable workflow
+    with:
+      service_name: ${{ inputs.service_name }}
+      deployment_time: ${{ inputs.deployment_time }}
+      commit_sha: ${{ inputs.commit_sha }}
+      environment: production
+      wait_minutes: 15
+    secrets: inherit  # Inherit from ai-release-monitoring repo secrets
