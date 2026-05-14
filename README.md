@@ -94,7 +94,26 @@ jobs:
 
 ## 🚀 Quick Start (PoC)
 
-### Option 1: Test in Your Service (Recommended for PoC)
+### Option 1: Self-Test in This Repo (Fastest! ⚡)
+
+**Test the workflow without touching service repos:**
+
+1. **Configure secrets in THIS repo:**
+   - Go to: [Settings → Secrets](https://github.com/jinjinwang11/ai-release-monitoring/settings/secrets/actions)
+   - Add: `DATADOG_API_KEY`, `DATADOG_APP_KEY`, `LARK_WEBHOOK`
+
+2. **Run test workflow:**
+   - Go to: [Actions → Test Self](https://github.com/jinjinwang11/ai-release-monitoring/actions/workflows/test-self.yaml)
+   - Click "Run workflow"
+   - Enter deployment time, commit SHA, service name
+   - Wait ~16 minutes
+   - Check Lark for report!
+
+**[📖 Detailed Guide: SELF-TEST-GUIDE.md](docs/SELF-TEST-GUIDE.md)**
+
+---
+
+### Option 2: Test in Service Repo (Real Integration)
 
 **Step 1: Copy standalone workflow**
 
