@@ -77,11 +77,10 @@ jobs:
       service_name: fprmfdt
       deployment_time: ${{ inputs.deployment_time }}
       commit_sha: ${{ inputs.commit_sha }}
-    secrets:
-      DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
-      DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
-      LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK }}
+    secrets: inherit  # ✅ Traveloka standard - auto-inherits org secrets
 ```
+
+**Note:** Uses `secrets: inherit` pattern (same as Cursor agent and ECS deployment workflows). See [Secret Configuration Guide](docs/SECRET-CONFIGURATION.md) for setup.
 
 ### Standalone Workflow (For Testing)
 

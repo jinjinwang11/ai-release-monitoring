@@ -17,15 +17,13 @@ on:
 
 jobs:
   call-ai-report:
-    # Call the reusable workflow (same pattern as Cursor agent)
+    # Call the reusable workflow (same pattern as Cursor agent and ECS deployment)
+    # Use 'secrets: inherit' to automatically inherit org-level secrets
     uses: jinjinwang11/ai-release-monitoring/.github/workflows/deployment-report.yaml@main
     with:
-      service_name: YOUR_SERVICE_NAME  # Replace with your service name
+      service_name: YOUR_SERVICE_NAME  # Replace with your service name (e.g., fprmfdt)
       deployment_time: ${{ inputs.deployment_time }}
       commit_sha: ${{ inputs.commit_sha }}
       environment: production
       wait_minutes: 15
-    secrets:
-      DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
-      DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
-      LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK }}
+    secrets: inherit  # ✅ Traveloka standard - inherits org-level secrets

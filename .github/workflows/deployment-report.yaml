@@ -2,6 +2,7 @@ name: AI Deployment Report (Reusable)
 
 # This is a REUSABLE workflow - call it from your service repo
 # Pattern: Same as Cursor agent integration and ci_build.yaml
+# Secrets: Uses 'secrets: inherit' pattern (Traveloka standard)
 
 on:
   workflow_call:
@@ -30,13 +31,13 @@ on:
         default: 15
     secrets:
       DATADOG_API_KEY:
-        description: 'Datadog API key'
+        description: 'Datadog API key (org-level secret recommended)'
         required: true
       DATADOG_APP_KEY:
-        description: 'Datadog application key'
+        description: 'Datadog application key (org-level secret recommended)'
         required: true
       LARK_WEBHOOK:
-        description: 'Lark webhook URL'
+        description: 'Lark webhook URL (org-level secret recommended)'
         required: true
 
 permissions:
